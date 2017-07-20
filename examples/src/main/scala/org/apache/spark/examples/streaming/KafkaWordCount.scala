@@ -55,6 +55,14 @@ object KafkaWordCount {
 
     val topicMap = topics.split(",").map((_, numThreads.toInt)).toMap
     val lines = KafkaUtils.createStream(ssc, zkQuorum, group, topicMap).map(_._2)
+
+	{	
+		lines.foreachRDD { rdd =>
+			rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")		
+		}
+	}
+
+    System.out.println("Lines are " + lines.print())
     val words = lines.flatMap(_.split(" "))
     val wordCounts = words.map(x => (x, 1L))
       .reduceByKeyAndWindow(_ + _, _ - _, Minutes(10), Seconds(2), 2)
@@ -92,6 +100,7 @@ object KafkaWordCountProducer {
       (1 to messagesPerSec.toInt).foreach { messageNum =>
         val str = (1 to wordsPerMessage.toInt).map(x => scala.util.Random.nextInt(10).toString)
           .mkString(" ")
+          System.out.println("String is " + str)
 
         val message = new ProducerRecord[String, String](topic, null, str)
         producer.send(message)
