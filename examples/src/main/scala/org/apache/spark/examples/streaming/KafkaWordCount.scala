@@ -25,6 +25,7 @@ import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, Produce
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.kafka._
+import org.apache.spark.SparkContext
 
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
@@ -47,21 +48,34 @@ object KafkaWordCount {
     }
 
     StreamingExamples.setStreamingLogLevels()
-
+    
+    val sparkConf = new SparkConf().setAppName("KafkaWordCount")
+    val sc = new SparkContext(sparkConf)
+    sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
+	val textFile = sc.textFile("s3a://bucket-x/venkat-cdc-testing/aws-machine-2")
+	System.out.println("No .of lines in AWS files is " + textFile.count())
+	val localRdd = sc.textFile("random_numbers.txt")
+	localRdd.saveAsTextFile("s3a://buecket-x/venkat-cdc-testing/numbers-data-take-1/")
+	sc.stop()
+    
+/*
     val Array(zkQuorum, group, topics, numThreads) = args
     val sparkConf = new SparkConf().setAppName("KafkaWordCount")
     val ssc = new StreamingContext(sparkConf, Seconds(2))
+    
     ssc.checkpoint("checkpoint")
 
     val topicMap = topics.split(",").map((_, numThreads.toInt)).toMap
     val lines = KafkaUtils.createStream(ssc, zkQuorum, group, topicMap).map(_._2)
 
+
 	{	
 		lines.foreachRDD { rdd =>
-			rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")		
+			rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")
 		}
 	}
-
+	
+	
     System.out.println("Lines are " + lines.print())
     val words = lines.flatMap(_.split(" "))
     val wordCounts = words.map(x => (x, 1L))
@@ -70,6 +84,7 @@ object KafkaWordCount {
 
     ssc.start()
     ssc.awaitTermination()
+    */
   }
 }
 
