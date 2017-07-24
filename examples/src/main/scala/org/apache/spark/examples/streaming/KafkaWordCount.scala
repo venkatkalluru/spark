@@ -20,7 +20,7 @@ package org.apache.spark.examples.streaming
 
 import java.util.HashMap
 
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+import org.apache.kafka.clients.producer.{ KafkaProducer, ProducerConfig, ProducerRecord }
 
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming._
@@ -49,7 +49,7 @@ object KafkaWordCount {
     }
 
     StreamingExamples.setStreamingLogLevels()
-   
+
     val Array(zkQuorum, group, topics, numThreads) = args
     val sparkConf = new SparkConf().setAppName("KafkaWordCount")
     val hadoopConf = new Configuration()
@@ -57,18 +57,18 @@ object KafkaWordCount {
     //val ssc = new StreamingContext("./", hadoopConf)
     val sc = new SparkContext(sparkConf)
     sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
-	val ssc = new StreamingContext(sc, Seconds(2))
-    
+    val ssc = new StreamingContext(sc, Seconds(2))
+
     ssc.checkpoint("checkpoint")
 
     val topicMap = topics.split(",").map((_, numThreads.toInt)).toMap
     val lines = KafkaUtils.createStream(ssc, zkQuorum, group, topicMap).map(_._2)
-	val dir = new String("dir")
-	
-	lines.foreachRDD { rdd =>
-		rdd.saveAsTextFile("s3a://bucket-name/venkat-cdc-testing/" + dir)			
-	}
-		
+    val dir = new String("dir")
+
+    lines.foreachRDD { rdd =>
+      rdd.saveAsTextFile("s3a://bucket-name/venkat-cdc-testing/" + dir)
+    }
+
     System.out.println("Lines are " + lines.print())
     val words = lines.flatMap(_.split(" "))
     val wordCounts = words.map(x => (x, 1L))
@@ -103,11 +103,11 @@ object KafkaWordCountProducer {
     val producer = new KafkaProducer[String, String](props)
 
     // Send some messages
-    while(true) {
+    while (true) {
       (1 to messagesPerSec.toInt).foreach { messageNum =>
         val str = (1 to wordsPerMessage.toInt).map(x => scala.util.Random.nextInt(10).toString)
           .mkString(" ")
-          System.out.println("String is " + str)
+        System.out.println("String is " + str)
 
         val message = new ProducerRecord[String, String](topic, null, str)
         producer.send(message)
