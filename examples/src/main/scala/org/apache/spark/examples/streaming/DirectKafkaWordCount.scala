@@ -30,6 +30,13 @@ import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.TaskContext
 
+import org.apache.avro.Schema
+import org.apache.avro.generic.GenericRecord
+import org.apache.avro.io.DatumReader
+import org.apache.avro.io.Decoder
+import org.apache.avro.specific.SpecificDatumReader
+import org.apache.avro.io.DecoderFactory
+
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
  * Usage: DirectKafkaWordCount <brokers> <topics>
@@ -51,6 +58,9 @@ object DirectKafkaWordCount {
         """.stripMargin)
       System.exit(1)
     }
+    
+    val schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"    
+    val schema: Schema  = new Schema.Parser().parse(schemaStr.toString);
 
     StreamingExamples.setStreamingLogLevels()
 
@@ -68,26 +78,18 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics
     val topicsSet = topics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)   
     val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
-
+      
       directStrm.foreachRDD(rdd => {
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
-      rdd.foreach(m => {
+      rdd.foreach(msg => {
         val o: OffsetRange = offsetRanges(TaskContext.get.partitionId)
         println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
-        System.out.println("Avro message is " + m._2)
+        System.out.println("Avro message is " + msg)
       })
     })
-
-    // Get the lines, split them into words, count the words and print
-    /*
-    val lines = messages.map(_._2)
-    val words = lines.flatMap(_.split(" "))
-    val wordCounts = words.map(x => (x, 1L)).reduceByKey(_ + _)
-    wordCounts.print()    
-    */
 
     // Start the computation
     ssc.start()

@@ -137,8 +137,16 @@
 		<artifactId>aws-java-sdk</artifactId>
 		<version>1.7.4</version>
 	</dependency>
-
-
+	<dependency>
+		<groupId>org.apache.avro</groupId>
+		<artifactId>avro</artifactId>
+		<version>1.8.0</version>
+	</dependency>
+	<dependency>
+		<groupId>org.apache.avro</groupId>
+		<artifactId>avro-tools</artifactId>
+		<version>1.8.0</version>
+	</dependency>
   </dependencies>
 
   <build>
