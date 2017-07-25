@@ -58,9 +58,9 @@ object DirectKafkaWordCount {
         """.stripMargin)
       System.exit(1)
     }
-    
-    val schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"    
-    val schema: Schema  = new Schema.Parser().parse(schemaStr.toString);
+
+    var schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"
+    val schema: Schema = new Schema.Parser().parse(schemaStr);
 
     StreamingExamples.setStreamingLogLevels()
 
@@ -78,16 +78,17 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics
     val topicsSet = topics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)   
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
     val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
-      
-      directStrm.foreachRDD(rdd => {
+
+    directStrm.foreachRDD(rdd => {
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd.foreach(msg => {
         val o: OffsetRange = offsetRanges(TaskContext.get.partitionId)
         println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
         System.out.println("Avro message is " + msg)
+        System.out.println("Key is " + msg._1 + " and Value is " + msg._2)
       })
     })
 
