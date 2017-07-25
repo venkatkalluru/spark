@@ -19,10 +19,14 @@
 package org.apache.spark.examples.streaming
 
 import kafka.serializer.StringDecoder
+import kafka.serializer.DefaultDecoder
 
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.kafka._
 import org.apache.spark.SparkConf
+
+import org.apache.spark.SparkContext
+import org.apache.hadoop.conf.Configuration
 
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
@@ -52,19 +56,33 @@ object DirectKafkaWordCount {
 
     // Create context with 2 second batch interval
     val sparkConf = new SparkConf().setAppName("DirectKafkaWordCount")
-    val ssc = new StreamingContext(sparkConf, Seconds(2))
+    
+    val hadoopConf = new Configuration()
+    hadoopConf.set("fs.s3a.server-side-encryption-algorithm", "AES256")
+    val sc = new SparkContext(sparkConf)
+    sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
+    val ssc = new StreamingContext(sc, Seconds(2))
+    //val ssc = new StreamingContext(sparkConf, Seconds(2))
 
     // Create direct kafka stream with brokers and topics
     val topicsSet = topics.split(",").toSet
     val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
-    val messages = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
+    val directStrm = KafkaUtils.createDirectStream[String, Array[Byte], StringDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
 
+    directStrm.foreachRDD( rdd => {
+      rdd.foreach(m => {
+        System.out.println("Avro message is " + m._2)
+      })
+    })
+      
     // Get the lines, split them into words, count the words and print
+      /*
     val lines = messages.map(_._2)
     val words = lines.flatMap(_.split(" "))
     val wordCounts = words.map(x => (x, 1L)).reduceByKey(_ + _)
-    wordCounts.print()
+    wordCounts.print()    
+    */
 
     // Start the computation
     ssc.start()
