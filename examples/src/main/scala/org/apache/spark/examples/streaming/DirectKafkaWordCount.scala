@@ -30,7 +30,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.TaskContext
 
 import org.apache.avro.Schema
-import org.apache.avro.generic.GenericData
+import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.Decoder
 import org.apache.avro.specific.SpecificDatumReader
 import org.apache.avro.io.DecoderFactory
@@ -57,8 +57,6 @@ object DirectKafkaWordCount {
       System.exit(1)
     }
 
-    var schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"
-
     StreamingExamples.setStreamingLogLevels()
 
     val Array(brokers, topics) = args
@@ -75,19 +73,22 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics
     val topicsSet = topics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
     val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
 
-    def printDecodeData(message: Array[Byte]): String = {
+    val source = scala.io.Source.fromFile("/tmp/schema.avsc")
+    val schemaStr = try source.mkString finally source.close()
 
+    def printDecodeData(message: Array[Byte]): GenericRecord = {
+      
       //  Deserialize and create generic record
       val schema = new Schema.Parser().parse(schemaStr);
-      val reader = new SpecificDatumReader[GenericData.Record](schema)
+      val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
       val userData = reader.read(null, decoder)
       println(userData)
-      return userData.get("f1").toString
+      return userData
     }
 
     val messages = directStrm.map(_._2)
