@@ -60,7 +60,7 @@ object DirectKafkaWordCount {
     }
 
     var schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"
-    val schema: Schema = new Schema.Parser().parse(schemaStr);
+    
 
     StreamingExamples.setStreamingLogLevels()
 
@@ -82,15 +82,33 @@ object DirectKafkaWordCount {
     val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
 
+    def printDecodeData(message: Array[Byte]) : String = {
+ 
+     //  Deserialize and create generic record
+     val schema: Schema = new Schema.Parser().parse(schemaStr); 
+     val reader: DatumReader[GenericRecord] = new SpecificDatumReader[GenericRecord](schema)
+     val decoder: Decoder = DecoderFactory.get().binaryDecoder(message, null)
+     val userData: GenericRecord = reader.read(null, decoder)
+     println(userData)
+     return userData.toString()
+    }
+
+    /*
     directStrm.foreachRDD(rdd => {
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd.foreach(msg => {
         val o: OffsetRange = offsetRanges(TaskContext.get.partitionId)
         println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
         System.out.println("Avro message is " + msg)
-        System.out.println("Key is " + msg._1 + " and Value is " + msg._2)
+        System.out.println("Key is " + new String(msg._1.map(_.toChar)) + " and Value is " + printDecodeData(msg._2))
       })
     })
+    * 
+    */
+    
+    val messages = directStrm.map(_._2)
+    val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
+    decodedMsgs.print()
 
     // Start the computation
     ssc.start()
