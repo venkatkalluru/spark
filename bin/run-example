@@ -23,3 +23,4 @@ fi
 
 export _SPARK_CMD_USAGE="Usage: ./bin/run-example [options] example-class [example args]"
 exec "${SPARK_HOME}"/bin/spark-submit run-example "$@"
+#exec "${SPARK_HOME}"/bin/spark-submit run-example --driver-java-options -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=8082 "$@"

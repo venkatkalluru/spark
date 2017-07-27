@@ -18,7 +18,6 @@
 // scalastyle:off println
 package org.apache.spark.examples.streaming
 
-import kafka.serializer.StringDecoder
 import kafka.serializer.DefaultDecoder
 
 import org.apache.spark.streaming._
@@ -31,8 +30,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.TaskContext
 
 import org.apache.avro.Schema
-import org.apache.avro.generic.GenericRecord
-import org.apache.avro.io.DatumReader
+import org.apache.avro.generic.GenericData
 import org.apache.avro.io.Decoder
 import org.apache.avro.specific.SpecificDatumReader
 import org.apache.avro.io.DecoderFactory
@@ -60,7 +58,6 @@ object DirectKafkaWordCount {
     }
 
     var schemaStr = "{\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}"
-    
 
     StreamingExamples.setStreamingLogLevels()
 
@@ -82,30 +79,17 @@ object DirectKafkaWordCount {
     val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, topicsSet)
 
-    def printDecodeData(message: Array[Byte]) : String = {
- 
-     //  Deserialize and create generic record
-     val schema: Schema = new Schema.Parser().parse(schemaStr); 
-     val reader: DatumReader[GenericRecord] = new SpecificDatumReader[GenericRecord](schema)
-     val decoder: Decoder = DecoderFactory.get().binaryDecoder(message, null)
-     val userData: GenericRecord = reader.read(null, decoder)
-     println(userData)
-     return userData.toString()
+    def printDecodeData(message: Array[Byte]): String = {
+
+      //  Deserialize and create generic record
+      val schema = new Schema.Parser().parse(schemaStr);
+      val reader = new SpecificDatumReader[GenericData.Record](schema)
+      val decoder = DecoderFactory.get().binaryDecoder(message, null)
+      val userData = reader.read(null, decoder)
+      println(userData)
+      return userData.get("f1").toString
     }
 
-    /*
-    directStrm.foreachRDD(rdd => {
-      val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
-      rdd.foreach(msg => {
-        val o: OffsetRange = offsetRanges(TaskContext.get.partitionId)
-        println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
-        System.out.println("Avro message is " + msg)
-        System.out.println("Key is " + new String(msg._1.map(_.toChar)) + " and Value is " + printDecodeData(msg._2))
-      })
-    })
-    * 
-    */
-    
     val messages = directStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
     decodedMsgs.print()
