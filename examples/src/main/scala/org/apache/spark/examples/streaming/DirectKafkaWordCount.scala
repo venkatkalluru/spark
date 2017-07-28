@@ -63,13 +63,10 @@ object DirectKafkaWordCount {
 
     // Create context with 2 second batch interval
     val sparkConf = new SparkConf().setAppName("DirectKafkaWordCount")
-
-    val hadoopConf = new Configuration()
-    hadoopConf.set("fs.s3a.server-side-encryption-algorithm", "AES256")
     val sc = new SparkContext(sparkConf)
     sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
+    
     val ssc = new StreamingContext(sc, Seconds(2))
-    //val ssc = new StreamingContext(sparkConf, Seconds(2))
 
     // Create direct kafka stream with brokers and topics
     val topicsSet = topics.split(",").toSet
@@ -94,6 +91,9 @@ object DirectKafkaWordCount {
     val messages = directStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
+//    decodedMsgs.foreachRDD(rdd =>
+//      rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")
+//    )
 
     // Start the computation
     ssc.start()
