@@ -80,20 +80,20 @@ object DirectKafkaWordCount {
     val source = scala.io.Source.fromFile("/tmp/schema.avsc")
     val schemaStr = try source.mkString finally source.close()
 
-    def printDecodeData(message: Array[Byte]): GenericRecord = {
-      
+    def printDecodeData(message: Array[Byte]): String = {
+
       //  Deserialize and create generic record
       val schema = new Schema.Parser().parse(schemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
       val userData = reader.read(null, decoder)
       println(userData)
-      return userData
+      return userData.toString()
     }
 
     val messages = directStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
-    decodedMsgs.print()
+    decodedMsgs.saveAsTextFiles("prefix", "suffix")
 
     // Start the computation
     ssc.start()
