@@ -19,6 +19,7 @@
 package org.apache.spark.examples.streaming
 
 import kafka.serializer.DefaultDecoder
+import kafka.serializer.StringDecoder
 
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.kafka._
@@ -59,7 +60,7 @@ object DirectKafkaWordCount {
 
     StreamingExamples.setStreamingLogLevels()
 
-    val Array(brokers, topics) = args
+    val Array(brokers, msgTopics, schemaTopics) = args
 
     // Create context with 2 second batch interval
     val sparkConf = new SparkConf().setAppName("DirectKafkaWordCount")
@@ -68,12 +69,31 @@ object DirectKafkaWordCount {
     
     val ssc = new StreamingContext(sc, Seconds(2))
 
-    // Create direct kafka stream with brokers and topics
-    val topicsSet = topics.split(",").toSet
+    // Create direct kafka stream with brokers and topics to pull from schema stream
+    val schemaTopicSet = schemaTopics.split(",").toSet
+    val schemaKafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+    val schemaStrm = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
+      ssc, schemaKafkaParams, schemaTopicSet)
+      
+    val schemaCache = collection.mutable.Map[Int, String]()
+      
+    def processSchemas(schema: String) = {
+          
+      println("Schema Hash Code " + schema.hashCode())
+      schemaCache.put(schema.hashCode(), schema)
+    }
+    
+    val schemas = schemaStrm.map(_._2)    
+    schemas.foreachRDD(rdd => processSchemas(rdd.toString()))
+    //schemas.foreachRDD(rdd => processSchemas(rdd))
+         
+    // Create direct kafka stream with brokers and topics to pull from message stream
+    val msgTopicsSet = msgTopics.split(",").toSet
     val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
-    val directStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
-      ssc, kafkaParams, topicsSet)
+    val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
+      ssc, kafkaParams, msgTopicsSet)
 
+      
     val source = scala.io.Source.fromFile("/tmp/schema.avsc")
     val schemaStr = try source.mkString finally source.close()
 
@@ -88,7 +108,7 @@ object DirectKafkaWordCount {
       return userData.toString()
     }
 
-    val messages = directStrm.map(_._2)
+    val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
 //    decodedMsgs.foreachRDD(rdd =>
