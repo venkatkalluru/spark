@@ -35,6 +35,7 @@ import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.Decoder
 import org.apache.avro.specific.SpecificDatumReader
 import org.apache.avro.io.DecoderFactory
+import org.apache.spark.broadcast.Broadcast
 
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
@@ -96,6 +97,7 @@ object DirectKafkaWordCount {
         //println(x)
         val (k, v) = x
         schemaCache.put(k, v)
+        myBroadcast = sc.broadcast(schemaCache)
         println("Schema Map size is " + schemaCache.size)
       })
     })    
@@ -107,10 +109,7 @@ object DirectKafkaWordCount {
       ssc, kafkaParams, msgTopicsSet)
 
       
-    val source = scala.io.Source.fromFile("/tmp/schema.avsc")
-    //val schemaStr = try source.mkString finally source.close()
-
-    def printDecodeData(message: Array[Byte]): String = {
+    def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): String = {
 
       //  Deserialize and create generic record
       /*
@@ -125,13 +124,13 @@ object DirectKafkaWordCount {
       * 
       */
       //println(message.toString())
-      println("In Decode message Schema Map size is " + schemaCache.size)
+      println("In Decode message Schema Map size is " + broadCast.value.size)
       return "Nothing"
     }
 
     Thread sleep 1000
     val messages = msgStrm.map(_._2)
-    val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
+    val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]], myBroadcast))
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
 //    decodedMsgs.foreachRDD(rdd =>
 //      rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")
