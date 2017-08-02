@@ -76,17 +76,30 @@ object DirectKafkaWordCount {
       ssc, schemaKafkaParams, schemaTopicSet)
       
     val schemaCache = collection.mutable.Map[Int, String]()
+    var myBroadcast = sc.broadcast(schemaCache)
       
-    def processSchemas(schema: String) = {
-          
-      println("Schema Hash Code " + schema.hashCode())
-      schemaCache.put(schema.hashCode(), schema)
+    def processSchemas(msg: (String, String)): (Int, String) = {
+      
+      val (k, v) = msg
+      val schemaStr = v.asInstanceOf[String]
+      val hashCode = schemaStr.hashCode()
+      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
+      
+      return (hashCode, schemaStr)
     }
     
-    val schemas = schemaStrm.map(_._2)    
-    schemas.foreachRDD(rdd => processSchemas(rdd.toString()))
-    //schemas.foreachRDD(rdd => processSchemas(rdd))
-         
+    //val schemas = schemaStrm.map(s => processSchemas(s))
+    //schemas.print()
+    
+    schemaStrm.foreachRDD(rdd => {
+      rdd.map(x => processSchemas(x)).collect().foreach(x => {
+        //println(x)
+        val (k, v) = x
+        schemaCache.put(k, v)
+        println("Schema Map size is " + schemaCache.size)
+      })
+    })    
+             
     // Create direct kafka stream with brokers and topics to pull from message stream
     val msgTopicsSet = msgTopics.split(",").toSet
     val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
@@ -95,19 +108,26 @@ object DirectKafkaWordCount {
 
       
     val source = scala.io.Source.fromFile("/tmp/schema.avsc")
-    val schemaStr = try source.mkString finally source.close()
+    //val schemaStr = try source.mkString finally source.close()
 
     def printDecodeData(message: Array[Byte]): String = {
 
       //  Deserialize and create generic record
+      /*
+      println("Schema size is " + schemaCache.size)
+      val schemaStr = schemaCache.get(-1120428818).get
       val schema = new Schema.Parser().parse(schemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
       val userData = reader.read(null, decoder)
       println(userData)
       return userData.toString()
+      * 
+      */
+      //println(message.toString())
+      return "Nothing"
     }
-
+    
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
