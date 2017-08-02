@@ -125,9 +125,11 @@ object DirectKafkaWordCount {
       * 
       */
       //println(message.toString())
+      println("In Decode message Schema Map size is " + schemaCache.size)
       return "Nothing"
     }
-    
+
+    Thread sleep 1000
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]]))
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
