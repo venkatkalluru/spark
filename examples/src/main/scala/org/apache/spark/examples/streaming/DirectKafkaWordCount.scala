@@ -84,13 +84,10 @@ object DirectKafkaWordCount {
       val (k, v) = msg
       val schemaStr = v.asInstanceOf[String]
       val hashCode = schemaStr.hashCode()
-      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
+//      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
       
       return (hashCode, schemaStr)
     }
-    
-    //val schemas = schemaStrm.map(s => processSchemas(s))
-    //schemas.print()
     
     schemaStrm.foreachRDD(rdd => {
       rdd.map(x => processSchemas(x)).collect().foreach(x => {
@@ -98,7 +95,7 @@ object DirectKafkaWordCount {
         val (k, v) = x
         schemaCache.put(k, v)
         myBroadcast = sc.broadcast(schemaCache)
-        println("Schema Map size is " + schemaCache.size)
+//        println("Schema Map size is " + schemaCache.size)
       })
     })    
              
@@ -113,32 +110,24 @@ object DirectKafkaWordCount {
     val schemaStr = try source.mkString finally source.close()
     println(schemaStr)
       
-    def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): String = {
+    def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): GenericRecord= {
 
-      //  Deserialize and create generic record
-      /*
-      println("Schema size is " + schemaCache.size)
-      val schemaStr = schemaCache.get(-1120428818).get
+      //  Deserialize and get generic record
+      //  TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
       val schema = new Schema.Parser().parse(schemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
-      val userData = reader.read(null, decoder)
-      println(userData)
-      return userData.toString()
-      * 
-      */
-      //println(message.toString())
-      println("In Decode message Schema Map size is " + broadCast.value.size)
-      return "Nothing"
+      val eventData = reader.read(null, decoder)
+      println(eventData)
+      
+      return eventData
     }
 
     Thread sleep 1000
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]], myBroadcast))
+    //Doing this action so that the spark does exercise the function or else it won't due to lazy semantics.
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
-//    decodedMsgs.foreachRDD(rdd =>
-//      rdd.saveAsTextFile("s3a://coafstatim/venkat-cdc-testing/")
-//    )
 
     // Start the computation
     ssc.start()
