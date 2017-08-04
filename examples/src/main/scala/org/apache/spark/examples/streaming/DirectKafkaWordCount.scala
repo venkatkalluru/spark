@@ -91,7 +91,7 @@ object DirectKafkaWordCount {
     
     schemaStrm.foreachRDD(rdd => {
       rdd.map(x => processSchemas(x)).collect().foreach(x => {
-        println(x)
+        println("Schemas is " + x)
         val (k, v) = x
         schemaCache.put(k, v)
         myBroadcast = sc.broadcast(schemaCache)
@@ -108,7 +108,7 @@ object DirectKafkaWordCount {
     val is = getClass.getResourceAsStream("/gg.avsc")  
     val source = scala.io.Source.fromInputStream(is)
     val schemaStr = try source.mkString finally source.close()
-    println(schemaStr)
+    //println(schemaStr)
       
     def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): GenericRecord= {
 
