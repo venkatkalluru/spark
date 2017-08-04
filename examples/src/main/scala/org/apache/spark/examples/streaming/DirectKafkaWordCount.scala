@@ -110,7 +110,7 @@ object DirectKafkaWordCount {
     val schemaStr = try source.mkString finally source.close()
     //println(schemaStr)
       
-    def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): GenericRecord= {
+    def decodeOracleWrapper(message: Array[Byte]): GenericRecord= {
 
       //  Deserialize and get generic record
       //  TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
@@ -125,7 +125,7 @@ object DirectKafkaWordCount {
 
     Thread sleep 1000
     val messages = msgStrm.map(_._2)
-    val decodedMsgs = messages.map(msg => printDecodeData(msg.asInstanceOf[Array[Byte]], myBroadcast))
+    val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
     //Doing this action so that the spark does exercise the function or else it won't due to lazy semantics.
     decodedMsgs.saveAsTextFiles("prefix", "suffix")
 
