@@ -94,7 +94,7 @@ object DirectKafkaWordCount {
     
     schemaStrm.foreachRDD(rdd => {
       rdd.map(x => processSchemas(x)).collect().foreach(x => {
-        //println(x)
+        println(x)
         val (k, v) = x
         schemaCache.put(k, v)
         myBroadcast = sc.broadcast(schemaCache)
@@ -102,12 +102,16 @@ object DirectKafkaWordCount {
       })
     })    
              
-    // Create direct kafka stream with brokers and topics to pull from message stream
+    // Create direct kafka stream with brokers and topics to pull from message stream   
     val msgTopicsSet = msgTopics.split(",").toSet
     val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
     val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, msgTopicsSet)
-
+    
+    val is = getClass.getResourceAsStream("/gg.avsc")  
+    val source = scala.io.Source.fromInputStream(is)
+    val schemaStr = try source.mkString finally source.close()
+    println(schemaStr)
       
     def printDecodeData(message: Array[Byte], broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): String = {
 

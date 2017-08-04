@@ -1,0 +1,15 @@
+{
+  "namespace" : "oracle.goldengate",
+  "type" : "record",
+  "name" : "OracleGenericWrapper",
+  "fields" : [ {
+    "name" : "table_name",
+    "type" : "string"
+  }, {
+    "name" : "schema_hash",
+    "type" : "int"
+  }, {
+    "name" : "payload",
+    "type" : "bytes"
+  } ]
+}
