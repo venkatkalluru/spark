@@ -126,8 +126,7 @@ object DirectKafkaWordCount {
     Thread sleep 1000
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
-    //Doing this action so that the spark does exercise the function or else it won't due to lazy semantics.
-    decodedMsgs.saveAsTextFiles("prefix", "suffix")
+    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})    
 
     // Start the computation
     ssc.start()
