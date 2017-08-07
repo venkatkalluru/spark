@@ -110,7 +110,7 @@ object DirectKafkaWordCount {
     val schemaStr = try source.mkString finally source.close()
     //println(schemaStr)
       
-    def decodeOracleWrapper(message: Array[Byte]): GenericRecord= {
+    def decodeOracleWrapper(message: Array[Byte]): (Int, GenericRecord)= {
 
       //  Deserialize and get generic record
       //  TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
@@ -118,15 +118,28 @@ object DirectKafkaWordCount {
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
       val eventData = reader.read(null, decoder)
-      println(eventData)
+//      println(eventData)
+      val hashCode = eventData.get("schema_hash").asInstanceOf[Int]
+//      println("Event Data hash code is " + hashCode)
       
-      return eventData
+      return (hashCode, eventData)
+    }
+    
+    def printEventData(eventData: (Int, GenericRecord), broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): String = {
+
+//      println("Schema Map size is " + broadCast.value.size)
+      val schema = broadCast.value.getOrElse(eventData._1, "No Schema")
+      println("Retreived Schema is " + schema + " for hash " + eventData._1)
+      return schema
     }
 
-    Thread sleep 1000
+    Thread sleep 2000
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
-    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})    
+//    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
+    val schemas = decodedMsgs.map(x => printEventData(x, myBroadcast))
+    schemas.print()
+    
 
     // Start the computation
     ssc.start()
