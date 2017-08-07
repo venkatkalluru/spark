@@ -36,6 +36,7 @@ import org.apache.avro.io.Decoder
 import org.apache.avro.specific.SpecificDatumReader
 import org.apache.avro.io.DecoderFactory
 import org.apache.spark.broadcast.Broadcast
+import java.nio.ByteBuffer
 
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
@@ -110,7 +111,7 @@ object DirectKafkaWordCount {
     val schemaStr = try source.mkString finally source.close()
     //println(schemaStr)
       
-    def decodeOracleWrapper(message: Array[Byte]): (Int, GenericRecord)= {
+    def decodeOracleWrapper(message: Array[Byte]): (Int, ByteBuffer)= {
 
       //  Deserialize and get generic record
       //  TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
@@ -122,23 +123,29 @@ object DirectKafkaWordCount {
       val hashCode = eventData.get("schema_hash").asInstanceOf[Int]
 //      println("Event Data hash code is " + hashCode)
       
-      return (hashCode, eventData)
+      return (hashCode, eventData.get("payload").asInstanceOf[ByteBuffer])
     }
     
-    def printEventData(eventData: (Int, GenericRecord), broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): String = {
+    def printEventData(inputData: (Int, ByteBuffer), broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): GenericRecord = {
 
 //      println("Schema Map size is " + broadCast.value.size)
-      val schema = broadCast.value.getOrElse(eventData._1, "No Schema")
-      println("Retreived Schema is " + schema + " for hash " + eventData._1)
-      return schema
+      val eventSchemaStr:String = broadCast.value.getOrElse(inputData._1, "No Schema")
+      println("Retreived Schema is " + schemaStr + " for hash " + inputData._1)
+      
+      val schema = new Schema.Parser().parse(eventSchemaStr);
+      val reader = new SpecificDatumReader[GenericRecord](schema)
+      val decoder = DecoderFactory.get().binaryDecoder(inputData._2.array(), null)
+      val eventData = reader.read(null, decoder)
+      println("Deserialized event data is " + eventData.toString())
+      return eventData
     }
 
     Thread sleep 2000
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
 //    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
-    val schemas = decodedMsgs.map(x => printEventData(x, myBroadcast))
-    schemas.print()
+    val msgs = decodedMsgs.map(x => printEventData(x, myBroadcast))
+    msgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
     
 
     // Start the computation
