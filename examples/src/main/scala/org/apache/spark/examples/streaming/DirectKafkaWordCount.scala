@@ -77,8 +77,7 @@ object DirectKafkaWordCount {
     val schemaStrm = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, schemaKafkaParams, schemaTopicSet)
       
-    val schemaCache = collection.mutable.Map[Int, String]()
-    var myBroadcast = sc.broadcast(schemaCache)
+    val schemaCache = collection.mutable.Map[Int, String]()  
       
     def processSchemas(msg: (String, String)): (Int, String) = {
       
@@ -95,7 +94,6 @@ object DirectKafkaWordCount {
         println("Schemas is " + x)
         val (k, v) = x
         schemaCache.put(k, v)
-        myBroadcast = sc.broadcast(schemaCache)
 //        println("Schema Map size is " + schemaCache.size)
       })
     })    
@@ -126,25 +124,24 @@ object DirectKafkaWordCount {
       return (hashCode, eventData.get("payload").asInstanceOf[ByteBuffer])
     }
     
-    def printEventData(inputData: (Int, ByteBuffer), broadCast: Broadcast[scala.collection.mutable.Map[Int, String]]): GenericRecord = {
+    def printEventData(inputData: (Int, ByteBuffer)): GenericRecord = {
 
 //      println("Schema Map size is " + broadCast.value.size)
-      val eventSchemaStr:String = broadCast.value.getOrElse(inputData._1, "No Schema")
-      println("Retreived Schema is " + eventSchemaStr + " for hash " + inputData._1)
+      val eventSchemaStr:String = schemaCache.getOrElse(inputData._1, "No Schema")
+//      println("Retreived Schema is " + eventSchemaStr + " for hash " + inputData._1)
       
       val schema = new Schema.Parser().parse(eventSchemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(inputData._2.array(), null)
       val eventData = reader.read(null, decoder)
-      println("Deserialized event data is " + eventData.toString())
+      println("Deserialized data is " + eventData.toString())
       return eventData
     }
-
-    Thread sleep 2000
+    
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
 //    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
-    val msgs = decodedMsgs.map(x => printEventData(x, myBroadcast))
+    val msgs = decodedMsgs.map(x => printEventData(x))
     msgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
     
 
