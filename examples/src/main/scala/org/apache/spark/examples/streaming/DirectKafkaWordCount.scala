@@ -130,7 +130,7 @@ object DirectKafkaWordCount {
 
 //      println("Schema Map size is " + broadCast.value.size)
       val eventSchemaStr:String = broadCast.value.getOrElse(inputData._1, "No Schema")
-      println("Retreived Schema is " + schemaStr + " for hash " + inputData._1)
+      println("Retreived Schema is " + eventSchemaStr + " for hash " + inputData._1)
       
       val schema = new Schema.Parser().parse(eventSchemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
