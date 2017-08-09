@@ -38,6 +38,8 @@ import org.apache.avro.io.DecoderFactory
 import org.apache.spark.broadcast.Broadcast
 import java.nio.ByteBuffer
 
+import java.io.EOFException
+
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
  * Usage: DirectKafkaWordCount <brokers> <topics>
@@ -133,9 +135,23 @@ object DirectKafkaWordCount {
       val schema = new Schema.Parser().parse(eventSchemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(inputData._2.array(), null)
-      val eventData = reader.read(null, decoder)
-      println("Deserialized data is " + eventData.toString())
-      return eventData
+      var eventData = List[GenericRecord]()
+      var data = reader.read(null, decoder)
+      var origData = data
+
+      try {
+        while (data != null) {
+          println("Deserialized message is " + data.toString())
+          eventData ::= data
+          data = reader.read(null, decoder)
+        }
+      } catch {
+        case ex: EOFException => {
+          println("EOF Exception") //TODO Remove this stmt later.
+        }
+        
+      }
+      return origData
     }
     
     val messages = msgStrm.map(_._2)
