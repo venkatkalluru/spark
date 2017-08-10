@@ -70,7 +70,7 @@ object DirectKafkaWordCount {
     val sparkConf = new SparkConf().setAppName("DirectKafkaWordCount")
     val sc = new SparkContext(sparkConf)
     sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
-    
+
     val ssc = new StreamingContext(sc, Seconds(2))
 
     // Create direct kafka stream with brokers and topics to pull from schema stream
@@ -78,88 +78,96 @@ object DirectKafkaWordCount {
     val schemaKafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
     val schemaStrm = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, schemaKafkaParams, schemaTopicSet)
-      
-    val schemaCache = collection.mutable.Map[Int, String]()  
-      
+
+    val schemaCache = collection.mutable.Map[Int, String]()
+
     def processSchemas(msg: (String, String)): (Int, String) = {
-      
+
       val (k, v) = msg
       val schemaStr = v.asInstanceOf[String]
       val hashCode = schemaStr.hashCode()
-//      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
-      
+      //      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
+
       return (hashCode, schemaStr)
     }
-    
+
     schemaStrm.foreachRDD(rdd => {
       rdd.map(x => processSchemas(x)).collect().foreach(x => {
         println("Schemas is " + x)
         val (k, v) = x
         schemaCache.put(k, v)
-//        println("Schema Map size is " + schemaCache.size)
       })
-    })    
-             
+    })
+
     // Create direct kafka stream with brokers and topics to pull from message stream   
     val msgTopicsSet = msgTopics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+    //    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
     val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, msgTopicsSet)
-    
-    val is = getClass.getResourceAsStream("/gg.avsc")  
+
+    val is = getClass.getResourceAsStream("/gg.avsc")
     val source = scala.io.Source.fromInputStream(is)
     val schemaStr = try source.mkString finally source.close()
     //println(schemaStr)
-      
-    def decodeOracleWrapper(message: Array[Byte]): (Int, ByteBuffer)= {
 
-      //  Deserialize and get generic record
-      //  TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
+    def decodeOracleWrapper(message: Array[Byte]): collection.mutable.Map[Int, List[ByteBuffer]] = {
+
+      var hashCodeToEvents = collection.mutable.Map[Int, List[ByteBuffer]]()
+
+      //        TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
       val schema = new Schema.Parser().parse(schemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
-      val eventData = reader.read(null, decoder)
-//      println(eventData)
-      val hashCode = eventData.get("schema_hash").asInstanceOf[Int]
-//      println("Event Data hash code is " + hashCode)
-      
-      return (hashCode, eventData.get("payload").asInstanceOf[ByteBuffer])
-    }
-    
-    def printEventData(inputData: (Int, ByteBuffer)): GenericRecord = {
 
-//      println("Schema Map size is " + broadCast.value.size)
-      val eventSchemaStr:String = schemaCache.getOrElse(inputData._1, "No Schema")
-//      println("Retreived Schema is " + eventSchemaStr + " for hash " + inputData._1)
-      
-      val schema = new Schema.Parser().parse(eventSchemaStr);
-      val reader = new SpecificDatumReader[GenericRecord](schema)
-      val decoder = DecoderFactory.get().binaryDecoder(inputData._2.array(), null)
-      var eventData = List[GenericRecord]()
       var data = reader.read(null, decoder)
-      var origData = data
-
+      //      println(eventData)      
       try {
-        while (data != null) {
-          println("Deserialized message is " + data.toString())
-          eventData ::= data
+        while (data != null) {          
+          val hashCode = data.get("schema_hash").asInstanceOf[Int]
+          if (hashCodeToEvents.contains(hashCode)) {
+            var dataList = hashCodeToEvents(hashCode)
+            dataList ::= data.get("payload").asInstanceOf[ByteBuffer]
+            hashCodeToEvents.put(hashCode, dataList)
+          } else {
+            var newList = List[ByteBuffer](data.get("payload").asInstanceOf[ByteBuffer])
+            hashCodeToEvents.put(hashCode, newList)
+          }
           data = reader.read(null, decoder)
         }
       } catch {
         case ex: EOFException => {
-          println("EOF Exception") //TODO Remove this stmt later.
+          println("EOF Exception Expected here. Find a better a way to do this") //TODO Remove this stmt later.
         }
-        
       }
-      return origData
+      return hashCodeToEvents
     }
-    
+
+    def printEventData(inputData: collection.mutable.Map[Int, List[ByteBuffer]]) = {
+
+      for ((k, v) <- inputData) {
+
+        if (schemaCache.contains(k)) {
+
+          val schemaStr = schemaCache apply k
+
+          val schema = new Schema.Parser().parse(schemaStr);
+          val reader = new SpecificDatumReader[GenericRecord](schema)
+
+          for (bb <- v) {
+
+            val decoder = DecoderFactory.get().binaryDecoder(bb.array(), null)
+            var data = reader.read(null, decoder)
+            println("Deserialized message is " + data.toString())
+          }
+        }
+      }
+    }
+
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
-//    decodedMsgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
     val msgs = decodedMsgs.map(x => printEventData(x))
-    msgs.foreachRDD(rdd => {println("No. of decoded messages are " + rdd.count())})
-    
+    msgs.foreachRDD(rdd => { println("No. of decoded messages are " + rdd.count()) })
 
     // Start the computation
     ssc.start()
