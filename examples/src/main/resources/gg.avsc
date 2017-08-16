@@ -1,15 +1,15 @@
 {
-  "namespace" : "oracle.goldengate",
   "type" : "record",
-  "name" : "OracleGenericWrapper",
-  "fields" : [ {
+  "name" : "generic_wrapper",
+  "namespace" : "oracle.goldengate",
+  "fields" : [ { 
     "name" : "table_name",
     "type" : "string"
   }, {
-    "name" : "schema_hash",
-    "type" : "int"
+    "name" : "schema_fingerprint",
+    "type" : "long"
   }, {
     "name" : "payload",
     "type" : "bytes"
-  } ]
+  } ] 
 }

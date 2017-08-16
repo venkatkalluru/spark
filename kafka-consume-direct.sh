@@ -1,4 +1,4 @@
 #!/bin/bash
 
 bin/run-example \
-	org.apache.spark.examples.streaming.DirectKafkaWordCount 10.204.99.230:9092 $1 $2
+	org.apache.spark.examples.streaming.DirectKafkaWordCount localhost:9094 varuntopic cloSchemaTopic

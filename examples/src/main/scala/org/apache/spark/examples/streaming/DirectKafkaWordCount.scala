@@ -31,6 +31,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.TaskContext
 
 import org.apache.avro.Schema
+import org.apache.avro.SchemaNormalization
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.Decoder
 import org.apache.avro.specific.SpecificDatumReader
@@ -79,13 +80,15 @@ object DirectKafkaWordCount {
     val schemaStrm = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, schemaKafkaParams, schemaTopicSet)
 
-    val schemaCache = collection.mutable.Map[Int, String]()
+    val schemaCache = collection.mutable.Map[Long, String]()
 
-    def processSchemas(msg: (String, String)): (Int, String) = {
+    def processSchemas(msg: (String, String)): (Long, String) = {
 
       val (k, v) = msg
       val schemaStr = v.asInstanceOf[String]
-      val hashCode = schemaStr.hashCode()
+      val schema = new Schema.Parser().parse(schemaStr);
+      //      val hashCode = schemaStr.hashCode()
+      val hashCode = SchemaNormalization.parsingFingerprint64(schema)
       //      println("Schema Hash Code " + schemaStr.hashCode() + " \n" + "Message is" + schemaStr + "\n")      
 
       return (hashCode, schemaStr)
@@ -101,8 +104,8 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics to pull from message stream   
     val msgTopicsSet = msgTopics.split(",").toSet
-    //    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+    //    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
     val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, msgTopicsSet)
 
@@ -111,20 +114,29 @@ object DirectKafkaWordCount {
     val schemaStr = try source.mkString finally source.close()
     //println(schemaStr)
 
-    def decodeOracleWrapper(message: Array[Byte]): collection.mutable.Map[Int, List[ByteBuffer]] = {
+    def decodeOracleWrapper(message: Array[Byte]): collection.mutable.Map[Long, List[ByteBuffer]] = {
 
-      var hashCodeToEvents = collection.mutable.Map[Int, List[ByteBuffer]]()
+      var hashCodeToEvents = collection.mutable.Map[Long, List[ByteBuffer]]()
 
       //        TODO: These few lines of code can also be avoided by broadcasting the final decoder.  
       val schema = new Schema.Parser().parse(schemaStr);
       val reader = new SpecificDatumReader[GenericRecord](schema)
       val decoder = DecoderFactory.get().binaryDecoder(message, null)
 
-      var data = reader.read(null, decoder)
-      //      println(eventData)      
+      var data: GenericRecord = null
       try {
-        while (data != null) {          
-          val hashCode = data.get("schema_hash").asInstanceOf[Int]
+        data = reader.read(null, decoder)
+        //        println(s"First data is $data")
+      } catch {
+        case ex: Exception => {
+          println("Got incorrect oraclewrapped avro data") //TODO Remove this stmt later.
+          println(ex)
+        }
+      }
+
+      try {
+        while (data != null) {
+          val hashCode = data.get("schema_fingerprint").asInstanceOf[Long]
           if (hashCodeToEvents.contains(hashCode)) {
             var dataList = hashCodeToEvents(hashCode)
             dataList ::= data.get("payload").asInstanceOf[ByteBuffer]
@@ -134,31 +146,36 @@ object DirectKafkaWordCount {
             hashCodeToEvents.put(hashCode, newList)
           }
           data = reader.read(null, decoder)
+          //          println(s"Next data is $data")
         }
       } catch {
         case ex: EOFException => {
-          println("EOF Exception Expected here. Find a better a way to do this") //TODO Remove this stmt later.
+          println("Mostly end of the buffer or possible incorrect oraclewrapped avro data") //TODO Remove this stmt later.
         }
       }
       return hashCodeToEvents
     }
 
-    def printEventData(inputData: collection.mutable.Map[Int, List[ByteBuffer]]) = {
+    def printEventData(inputData: collection.mutable.Map[Long, List[ByteBuffer]]) = {
 
       for ((k, v) <- inputData) {
 
+        //        println(s"Key is $k and Value is $v")
         if (schemaCache.contains(k)) {
 
           val schemaStr = schemaCache apply k
+
+          //          println(s"Retreive schema is $schemaStr")
 
           val schema = new Schema.Parser().parse(schemaStr);
           val reader = new SpecificDatumReader[GenericRecord](schema)
 
           for (bb <- v) {
 
+            //            println(s"Byte buffer is $bb")
             val decoder = DecoderFactory.get().binaryDecoder(bb.array(), null)
             var data = reader.read(null, decoder)
-            println("Deserialized message is " + data.toString())
+            println(s"Deserialized message is $data.toString()")
           }
         }
       }
@@ -167,6 +184,7 @@ object DirectKafkaWordCount {
     val messages = msgStrm.map(_._2)
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
     val msgs = decodedMsgs.map(x => printEventData(x))
+    msgs.count()
     msgs.foreachRDD(rdd => { println("No. of decoded messages are " + rdd.count()) })
 
     // Start the computation
