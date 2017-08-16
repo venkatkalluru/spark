@@ -175,7 +175,7 @@ object DirectKafkaWordCount {
             //            println(s"Byte buffer is $bb")
             val decoder = DecoderFactory.get().binaryDecoder(bb.array(), null)
             var data = reader.read(null, decoder)
-            println(s"Deserialized message is $data.toString()")
+            println(s"Deserialized message is $data")
           }
         }
       }
