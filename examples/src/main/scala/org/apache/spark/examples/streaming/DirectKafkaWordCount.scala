@@ -40,6 +40,10 @@ import org.apache.spark.broadcast.Broadcast
 import java.nio.ByteBuffer
 
 import java.io.EOFException
+import java.sql.Connection
+import java.sql.DriverManager
+
+import java.util.Properties
 
 /**
  * Consumes messages from one or more topics in Kafka and does wordcount.
@@ -72,7 +76,7 @@ object DirectKafkaWordCount {
     val sc = new SparkContext(sparkConf)
     sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
 
-    val ssc = new StreamingContext(sc, Seconds(60))
+    val ssc = new StreamingContext(sc, Seconds(20))
 
     // Create direct kafka stream with brokers and topics to pull from schema stream
     val schemaTopicSet = schemaTopics.split(",").toSet
@@ -104,8 +108,8 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics to pull from message stream   
     val msgTopicsSet = msgTopics.split(",").toSet
-//    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
-        val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+//        val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
     val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, msgTopicsSet)
 
@@ -184,9 +188,9 @@ object DirectKafkaWordCount {
     
     import org.apache.spark.sql.SparkSession
     implicit val spark: SparkSession = SparkSession.builder().getOrCreate()
-    
-    def getDBConnection() = {
-      
+   
+    def getDBConfig(): (String, Properties)= {
+         
       // Option 1: Build the parameters into a JDBC url to pass into the DataFrame APIs
       val jdbcUsername = ""
       val jdbcPassword = "oracle123"
@@ -200,11 +204,10 @@ object DirectKafkaWordCount {
       connectionProperties.setProperty("driver", "oracle.jdbc.driver.OracleDriver")
       connectionProperties.put("user", jdbcUsername)
       connectionProperties.put("password", jdbcPassword)
-      val team_table = spark.read.jdbc(jdbcUrl, "", connectionProperties)
-      team_table.printSchema
+      
+      (jdbcUrl, connectionProperties)
     }
-
-    getDBConnection()
+    
     // Hold a reference to the current offset ranges, so it can be used downstream
     var offsetRanges = Array.empty[OffsetRange]
  
@@ -215,11 +218,18 @@ object DirectKafkaWordCount {
     
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
     val msgs = decodedMsgs.map(x => printEventData(x))
-    msgs.count()
+    
+    val dbConfig = getDBConfig() 
+    
     msgs.foreachRDD(rdd => { 
       println("No. of decoded messages are " + rdd.count())
       for (o <- offsetRanges) {
         println(s"Meta data info is ${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
+        val untilOffset = o.untilOffset
+        val sqlUpdate = s"update clo.cdc_oracle_offset set offset=$untilOffset, topicName='cdc_msg', modifiedtime=sysdate where appName='cdc_spark'"
+        println(sqlUpdate)
+        val updatedRows = DriverManager.getConnection(dbConfig._1, dbConfig._2).createStatement().executeUpdate(sqlUpdate)
+        println(s"Updated number of rows are $updatedRows")
       }
     })
 
