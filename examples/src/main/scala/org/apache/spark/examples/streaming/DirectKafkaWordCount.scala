@@ -72,7 +72,7 @@ object DirectKafkaWordCount {
     val sc = new SparkContext(sparkConf)
     sc.hadoopConfiguration.set("fs.s3a.server-side-encryption-algorithm", "AES256")
 
-    val ssc = new StreamingContext(sc, Seconds(2))
+    val ssc = new StreamingContext(sc, Seconds(60))
 
     // Create direct kafka stream with brokers and topics to pull from schema stream
     val schemaTopicSet = schemaTopics.split(",").toSet
@@ -104,8 +104,8 @@ object DirectKafkaWordCount {
 
     // Create direct kafka stream with brokers and topics to pull from message stream   
     val msgTopicsSet = msgTopics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
-    //    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+//    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+        val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
     val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
       ssc, kafkaParams, msgTopicsSet)
 
@@ -180,12 +180,48 @@ object DirectKafkaWordCount {
         }
       }
     }
+    
+    
+    import org.apache.spark.sql.SparkSession
+    implicit val spark: SparkSession = SparkSession.builder().getOrCreate()
+    
+    def getDBConnection() = {
+      
+      // Option 1: Build the parameters into a JDBC url to pass into the DataFrame APIs
+      val jdbcUsername = ""
+      val jdbcPassword = "oracle123"
+      val jdbcHostname = ""
+      val jdbcPort = 1521
+      val jdbcDatabase = "DCLOM8"
+      val jdbcUrl = s"jdbc:oracle:thin:@${jdbcHostname}:${jdbcPort}/${jdbcDatabase}"
+      
+      import java.util.Properties
+      val connectionProperties = new Properties()
+      connectionProperties.setProperty("driver", "oracle.jdbc.driver.OracleDriver")
+      connectionProperties.put("user", jdbcUsername)
+      connectionProperties.put("password", jdbcPassword)
+      val team_table = spark.read.jdbc(jdbcUrl, "", connectionProperties)
+      team_table.printSchema
+    }
 
-    val messages = msgStrm.map(_._2)
+    getDBConnection()
+    // Hold a reference to the current offset ranges, so it can be used downstream
+    var offsetRanges = Array.empty[OffsetRange]
+ 
+    val messages = msgStrm.transform { rdd =>
+      offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      rdd
+    }.map(_._2)
+    
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
     val msgs = decodedMsgs.map(x => printEventData(x))
     msgs.count()
-    msgs.foreachRDD(rdd => { println("No. of decoded messages are " + rdd.count()) })
+    msgs.foreachRDD(rdd => { 
+      println("No. of decoded messages are " + rdd.count())
+      for (o <- offsetRanges) {
+        println(s"Meta data info is ${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
+      }
+    })
 
     // Start the computation
     ssc.start()
