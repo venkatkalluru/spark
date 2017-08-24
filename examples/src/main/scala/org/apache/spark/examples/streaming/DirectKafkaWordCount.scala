@@ -20,6 +20,8 @@ package org.apache.spark.examples.streaming
 
 import kafka.serializer.DefaultDecoder
 import kafka.serializer.StringDecoder
+import kafka.message.MessageAndMetadata
+import kafka.common.TopicAndPartition
 
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.kafka._
@@ -100,18 +102,12 @@ object DirectKafkaWordCount {
 
     schemaStrm.foreachRDD(rdd => {
       rdd.map(x => processSchemas(x)).collect().foreach(x => {
-        println("Schemas is " + x)
+//        println("Schemas is " + x)
         val (k, v) = x
         schemaCache.put(k, v)
       })
     })
 
-    // Create direct kafka stream with brokers and topics to pull from message stream   
-    val msgTopicsSet = msgTopics.split(",").toSet
-    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
-//        val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
-    val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder](
-      ssc, kafkaParams, msgTopicsSet)
 
     val is = getClass.getResourceAsStream("/gg.avsc")
     val source = scala.io.Source.fromInputStream(is)
@@ -193,7 +189,7 @@ object DirectKafkaWordCount {
          
       // Option 1: Build the parameters into a JDBC url to pass into the DataFrame APIs
       val jdbcUsername = ""
-      val jdbcPassword = "oracle123"
+      val jdbcPassword = ""
       val jdbcHostname = ""
       val jdbcPort = 1521
       val jdbcDatabase = "DCLOM8"
@@ -208,9 +204,35 @@ object DirectKafkaWordCount {
       (jdbcUrl, connectionProperties)
     }
     
+    val dbConfig = getDBConfig() 
     // Hold a reference to the current offset ranges, so it can be used downstream
     var offsetRanges = Array.empty[OffsetRange]
  
+    // Create direct kafka stream with brokers and topics to pull from message stream   
+    val msgTopicsSet = msgTopics.split(",").toSet
+    val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers, "auto.offset.reset" -> "smallest")
+//        val kafkaParams = Map[String, String]("metadata.broker.list" -> brokers)
+    
+    def getLastCommitedOffset(topicName:String, appName:String): Map[TopicAndPartition, Long] = {
+     
+        val sqlSelect = s"select offset from clo.cdc_oracle_offset where appName='cdc_spark' and topicName='cdc_msg_venkat'"
+        println(sqlSelect)
+        val offsetRowSet = DriverManager.getConnection(dbConfig._1, dbConfig._2).createStatement().executeQuery(sqlSelect)
+        var offset:Long = 0
+        if(offsetRowSet.next()) {          
+          offset = offsetRowSet.getLong(1)
+          println(s"Starting from offset $offset")
+        }
+        
+        val tp = new TopicAndPartition(topicName, 0)
+        Map(tp -> offset)
+    }
+    
+    val fromOffsets = getLastCommitedOffset("cdc_msg_venkat", "cdc_spark")
+    val messageHandler = (mmd: MessageAndMetadata[Array[Byte], Array[Byte]]) => (mmd.key, mmd.message)
+    val msgStrm = KafkaUtils.createDirectStream[Array[Byte], Array[Byte], DefaultDecoder, DefaultDecoder, (Array[Byte], Array[Byte])](ssc, kafkaParams, fromOffsets, messageHandler)
+      
+      
     val messages = msgStrm.transform { rdd =>
       offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd
@@ -218,15 +240,13 @@ object DirectKafkaWordCount {
     
     val decodedMsgs = messages.map(msg => decodeOracleWrapper(msg.asInstanceOf[Array[Byte]]))
     val msgs = decodedMsgs.map(x => printEventData(x))
-    
-    val dbConfig = getDBConfig() 
-    
+            
     msgs.foreachRDD(rdd => { 
       println("No. of decoded messages are " + rdd.count())
       for (o <- offsetRanges) {
         println(s"Meta data info is ${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
         val untilOffset = o.untilOffset
-        val sqlUpdate = s"update clo.cdc_oracle_offset set offset=$untilOffset, topicName='cdc_msg', modifiedtime=sysdate where appName='cdc_spark'"
+        val sqlUpdate = s"update clo.cdc_oracle_offset set offset=$untilOffset, topicName='cdc_msg_venkat', modifiedtime=sysdate where appName='cdc_spark'"
         println(sqlUpdate)
         val updatedRows = DriverManager.getConnection(dbConfig._1, dbConfig._2).createStatement().executeUpdate(sqlUpdate)
         println(s"Updated number of rows are $updatedRows")
